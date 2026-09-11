@@ -28,6 +28,32 @@
 
 @media (max-width: 600px) {
   .detail-page {
-    padding: 20px 14px !important;
+    padding: 64px 14px 20px 14px !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .content-page {
+    padding: 64px 14px 20px 14px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .inbox-row {
+    flex-wrap: wrap;
+    padding: 14px !important;
+    gap: 10px !important;
+  }
+  .inbox-row-deadline {
+    order: 4;
+    flex-basis: 100% !important;
+    width: auto !important;
+    text-align: left !important;
+    margin-top: 2px;
+    padding-left: 56px;
+  }
+  .inbox-row-score {
+    transform: scale(0.82);
+    transform-origin: left center;
   }
 }

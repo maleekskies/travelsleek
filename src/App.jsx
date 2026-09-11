@@ -654,7 +654,7 @@ function Inbox({ opportunities, onOpen, onBulk, onSync, syncing }) {
   const toggle = (id) => setSelected((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
 
   return (
-    <div style={{ padding: "28px 36px", flex: 1, overflow: "auto" }}>
+    <div className="content-page" style={{ padding: "28px 36px", flex: 1, overflow: "auto" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
         <h1 style={{ fontFamily: "'Source Serif 4', serif", fontSize: 26, margin: 0, color: THEME.heading }}>Inbox</h1>
         <button onClick={onSync} disabled={syncing} style={{ ...lightGhostBtn, opacity: syncing ? 0.6 : 1 }}>
@@ -694,14 +694,14 @@ function Inbox({ opportunities, onOpen, onBulk, onSync, syncing }) {
 
       <div style={{ border: `1px solid ${THEME.panelBorder}`, background: THEME.panel }}>
         {filtered.map((o) => (
-          <div key={o.id} onClick={() => onOpen(o.id)} style={{
+          <div key={o.id} onClick={() => onOpen(o.id)} className="inbox-row" style={{
             display: "flex", alignItems: "center", gap: 16, padding: "16px 18px",
             borderBottom: `1px solid ${THEME.rowDivider}`, cursor: "pointer",
           }}>
             <input type="checkbox" checked={selected.includes(o.id)} onClick={(e) => e.stopPropagation()}
-              onChange={() => toggle(o.id)} style={{ width: 15, height: 15 }} />
-            <ScoreBadge score={o.score} />
-            <div style={{ flex: 1, minWidth: 0 }}>
+              onChange={() => toggle(o.id)} className="inbox-row-check" style={{ width: 15, height: 15 }} />
+            <div className="inbox-row-score"><ScoreBadge score={o.score} /></div>
+            <div className="inbox-row-content" style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 3, flexWrap: "wrap" }}>
                 <TypeBadge type={o.type} />
                 <EligStamp status={o.eligibility} small />
@@ -714,7 +714,7 @@ function Inbox({ opportunities, onOpen, onBulk, onSync, syncing }) {
                 {o.gap.map((f) => <Tag key={f} text={f} />)}
               </div>
             </div>
-            <div style={{ textAlign: "right", flexShrink: 0, width: 100 }}>
+            <div className="inbox-row-deadline" style={{ textAlign: "right", flexShrink: 0, width: 100 }}>
               <DeadlinePill deadline={o.deadline} />
             </div>
           </div>
@@ -831,7 +831,7 @@ function Section({ title, children }) {
 
 function Pipeline({ opportunities, onOpen }) {
   return (
-    <div style={{ padding: "28px 36px", flex: 1, overflow: "auto" }}>
+    <div className="content-page" style={{ padding: "28px 36px", flex: 1, overflow: "auto" }}>
       <h1 style={{ fontFamily: "'Source Serif 4', serif", fontSize: 26, margin: "0 0 20px", color: THEME.heading }}>Pipeline</h1>
       <div style={{ display: "flex", gap: 16 }}>
         {STAGES.map((stage) => {
@@ -935,7 +935,7 @@ function SettingsView({ profile, setProfile, opportunities, onImported, onLogout
   };
 
   return (
-    <div style={{ padding: "28px 36px", flex: 1, overflow: "auto", maxWidth: 560 }}>
+    <div className="content-page" style={{ padding: "28px 36px", flex: 1, overflow: "auto", maxWidth: 560 }}>
       <h1 style={{ fontFamily: "'Source Serif 4', serif", fontSize: 26, margin: "0 0 20px", color: THEME.heading }}>Settings</h1>
 
       <Section title="Profile">
