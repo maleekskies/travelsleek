@@ -14,7 +14,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 // Maps a Supabase row (snake_case) to the shape the UI components expect.
 function rowToOpportunity(row) {
   return {
-    id: row.id,
+    id: row.external_id,
     externalId: row.external_id,
     type: row.type,
     org: row.org,
@@ -247,9 +247,9 @@ const daysUntil = (dateStr) => {
 };
 
 const eligStamp = {
-  eligible: { label: "ELIGIBLE", color: THEME.good, bg: THEME.goodBg },
-  review: { label: "REVIEW", color: THEME.warn, bg: THEME.warnBg },
-  "not eligible": { label: "NOT ELIGIBLE", color: THEME.bad, bg: THEME.badBg },
+  eligible: { label: "ELIGIBLE", color: THEME.good, bg: THEME.goodBg, hint: "You meet every stated eligibility line we could check automatically." },
+  review: { label: "REVIEW", color: THEME.warn, bg: THEME.warnBg, hint: "At least one requirement is unconfirmed or unmet — check the details before applying." },
+  "not eligible": { label: "NOT ELIGIBLE", color: THEME.bad, bg: THEME.badBg, hint: "You don't currently meet a stated requirement for this one." },
 };
 
 const docStatusColor = {
@@ -271,6 +271,7 @@ function ScoreBadge({ score, size = 44 }) {
   const color = score >= 80 ? THEME.good : score >= 60 ? THEME.warn : THEME.bad;
   return (
     <div
+      title={`Fit score out of 100 — how closely this matches your profile and its own requirements.`}
       style={{
         width: size, height: size, borderRadius: "50%",
         border: `2px solid ${color}`, color,
@@ -288,6 +289,7 @@ function EligStamp({ status, small }) {
   const s = eligStamp[status];
   return (
     <span
+      title={s.hint}
       style={{
         color: s.color, background: s.bg, border: `1px solid ${s.color}55`,
         padding: small ? "1px 6px" : "3px 10px", borderRadius: 3,
@@ -331,7 +333,20 @@ function DeadlinePill({ deadline, onDark }) {
 
 // ---------------------------------------------------------------------------
 
-function AuthScreen({ onAuthed }) {
+function GuestPrompt({ message, onSignUp }) {
+  return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 28 }}>
+      <div style={{ maxWidth: 360, textAlign: "center" }}>
+        <p style={{ fontSize: 14, color: THEME.subHeading, marginBottom: 18, lineHeight: 1.5 }}>{message}</p>
+        <button onClick={onSignUp} style={primaryBtn}>Sign up — no verification step</button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+
+function AuthScreen({ onAuthed, onCancel }) {
   const [mode, setMode] = useState("signup"); // "signup" | "login"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -352,6 +367,7 @@ function AuthScreen({ onAuthed }) {
       if (rpcError) {
         const msg = rpcError.message || "";
         if (msg.includes("EMAIL_TAKEN")) setError("That email is already registered — try logging in instead.");
+        else if (msg.includes("RATE_LIMITED")) setError("Too many signups right now — please try again in a few minutes.");
         else if (msg.includes("INVALID_CREDENTIALS")) setError("Wrong email or password.");
         else if (msg.includes("INVALID_INPUT")) setError("Enter an email and a password of at least 6 characters.");
         else setError("Something went wrong. Try again.");
@@ -371,6 +387,11 @@ function AuthScreen({ onAuthed }) {
       background: THEME.bg, padding: 24,
     }}>
       <form onSubmit={submit} style={{ width: "100%", maxWidth: 400, background: THEME.panel, border: `1px solid ${THEME.panelBorder}`, padding: "40px 36px" }}>
+        {onCancel && (
+          <button type="button" onClick={onCancel} aria-label="Back to browsing" style={{ ...ghostBtn, padding: 0, marginBottom: 16 }}>
+            <ChevronLeft size={15} /> Back to browsing
+          </button>
+        )}
         <h2 style={{ fontFamily: "'Source Serif 4', serif", fontSize: 24, margin: "0 0 6px", color: THEME.ink }}>
           {mode === "signup" ? "Create your account" : "Welcome back"}
         </h2>
@@ -399,6 +420,10 @@ function AuthScreen({ onAuthed }) {
         >
           {mode === "signup" ? "Already have an account? Log in" : "New here? Sign up"}
         </button>
+
+        <p style={{ fontSize: 11, color: THEME.faint, textAlign: "center", marginTop: 18, marginBottom: 0, lineHeight: 1.5 }}>
+          TravelSleek is an independent aggregator, not an immigration lawyer or university. Always verify details on the official page before applying.
+        </p>
       </form>
     </div>
   );
@@ -596,7 +621,7 @@ function TagInput({ label, hint, values, onChange, placeholder }) {
   );
 }
 
-function Sidebar({ view, setView, profile, mobileOpen, onClose }) {
+function Sidebar({ view, setView, profile, guest, mobileOpen, onClose }) {
   const items = [
     { id: "inbox", label: "Inbox", icon: InboxIcon },
     { id: "pipeline", label: "Pipeline", icon: Layers },
@@ -613,10 +638,10 @@ function Sidebar({ view, setView, profile, mobileOpen, onClose }) {
           <div>
             TravelSleek
             <div style={{ fontSize: 11, color: THEME.subHeading, fontFamily: "Inter, sans-serif", fontWeight: 400, marginTop: 2 }}>
-              {profile?.name || "your"} · case file
+              {guest ? "browsing as guest" : `${profile?.name || "your"} · case file`}
             </div>
           </div>
-          <button onClick={onClose} className="mobile-menu-btn" style={{ border: "none", background: "none", color: THEME.subHeading, cursor: "pointer", padding: 2 }}>
+          <button onClick={onClose} className="mobile-menu-btn" aria-label="Close menu" style={{ border: "none", background: "none", color: THEME.subHeading, cursor: "pointer", padding: 2 }}>
             <X size={18} />
           </button>
         </div>
@@ -631,6 +656,16 @@ function Sidebar({ view, setView, profile, mobileOpen, onClose }) {
             <Icon size={15} /> {label}
           </button>
         ))}
+        {guest && (
+          <button onClick={() => { setView("auth"); onClose?.(); }} style={{
+            border: "none", background: "none", marginTop: "auto",
+            color: THEME.good, fontSize: 13, fontWeight: 700,
+            display: "flex", alignItems: "center", gap: 9, padding: "10px 18px",
+            cursor: "pointer", textAlign: "left",
+          }}>
+            Log in / Sign up
+          </button>
+        )}
       </div>
     </>
   );
@@ -638,7 +673,7 @@ function Sidebar({ view, setView, profile, mobileOpen, onClose }) {
 
 // ---------------------------------------------------------------------------
 
-function Inbox({ opportunities, onOpen, onBulk, onSync, syncing }) {
+function Inbox({ opportunities, onOpen, onBulk, onSync, syncing, guest, onRequireAuth }) {
   const [tab, setTab] = useState("all");
   const [sort, setSort] = useState("score");
   const [query, setQuery] = useState("");
@@ -655,6 +690,12 @@ function Inbox({ opportunities, onOpen, onBulk, onSync, syncing }) {
 
   return (
     <div className="content-page" style={{ padding: "28px 36px", flex: 1, overflow: "auto" }}>
+      {guest && (
+        <div style={{ background: THEME.warnBg, border: `1px solid ${THEME.warn}55`, color: THEME.ink, fontSize: 12.5, padding: "10px 14px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <span>Browsing as a guest — your saves and progress won't be kept.</span>
+          <button onClick={onRequireAuth} style={{ border: "none", background: "none", color: THEME.warn, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>Sign up</button>
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
         <h1 style={{ fontFamily: "'Source Serif 4', serif", fontSize: 26, margin: 0, color: THEME.heading }}>Inbox</h1>
         <button onClick={onSync} disabled={syncing} style={{ ...lightGhostBtn, opacity: syncing ? 0.6 : 1 }}>
@@ -737,7 +778,7 @@ function Tag({ text, good }) {
 
 // ---------------------------------------------------------------------------
 
-function Detail({ opp, onBack, onStageChange, onDocStatus }) {
+function Detail({ opp, onBack, onStageChange, onDocStatus, guest, onRequireAuth }) {
   if (!opp) return null;
   return (
     <div className="detail-page" style={{ padding: "28px 36px", flex: 1, overflow: "auto", maxWidth: 760 }}>
@@ -791,12 +832,16 @@ function Detail({ opp, onBack, onStageChange, onDocStatus }) {
             <span style={{ fontSize: 13.5, color: THEME.ink, display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
               <FileText size={14} color={THEME.faint} style={{ flexShrink: 0 }} /> {d.name}
             </span>
-            <select value={d.status} onChange={(e) => onDocStatus(opp.id, d.name, e.target.value)}
-              style={{ fontSize: 12, border: `1px solid ${THEME.panelBorder}`, padding: "4px 8px", color: docStatusColor[d.status], fontWeight: 600 }}>
-              <option value="not started">Not started</option>
-              <option value="drafting">Drafting</option>
-              <option value="ready">Ready</option>
-            </select>
+            {guest ? (
+              <span style={{ fontSize: 12, fontWeight: 600, color: docStatusColor[d.status] }}>{d.status}</span>
+            ) : (
+              <select value={d.status} onChange={(e) => onDocStatus(opp.id, d.name, e.target.value)}
+                style={{ fontSize: 12, border: `1px solid ${THEME.panelBorder}`, padding: "4px 8px", color: docStatusColor[d.status], fontWeight: 600 }}>
+                <option value="not started">Not started</option>
+                <option value="drafting">Drafting</option>
+                <option value="ready">Ready</option>
+              </select>
+            )}
           </div>
         ))}
         <p style={{ fontSize: 11.5, color: THEME.faint, marginTop: 10 }}>
@@ -809,11 +854,18 @@ function Detail({ opp, onBack, onStageChange, onDocStatus }) {
         <div style={{ fontSize: 12, color: THEME.sub, marginTop: 3 }}>by {opp.nextDate}</div>
       </Section>
 
-      <div style={{ background: THEME.panel, border: `1px solid ${THEME.panelBorder}`, padding: "16px 18px", display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button style={primaryBtn} onClick={() => onStageChange(opp.id, "preparing")}><Bookmark size={14} /> Save to pipeline</button>
-        <button style={secondaryBtn} onClick={() => onStageChange(opp.id, "submitted")}><Send size={14} /> Mark submitted</button>
-        <button style={{ ...ghostBtn, color: THEME.bad }} onClick={() => onStageChange(opp.id, "rejected")}><X size={14} /> Reject with reason</button>
-      </div>
+      {guest ? (
+        <div style={{ background: THEME.panel, border: `1px solid ${THEME.panelBorder}`, padding: "16px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12.5, color: THEME.sub }}>Sign up to save this to a pipeline and track your progress.</span>
+          <button style={primaryBtn} onClick={onRequireAuth}>Sign up</button>
+        </div>
+      ) : (
+        <div style={{ background: THEME.panel, border: `1px solid ${THEME.panelBorder}`, padding: "16px 18px", display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button style={primaryBtn} onClick={() => onStageChange(opp.id, "preparing")}><Bookmark size={14} /> Save to pipeline</button>
+          <button style={secondaryBtn} onClick={() => onStageChange(opp.id, "submitted")}><Send size={14} /> Mark submitted</button>
+          <button style={{ ...ghostBtn, color: THEME.bad }} onClick={() => onStageChange(opp.id, "rejected")}><X size={14} /> Reject with reason</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1028,6 +1080,26 @@ function SettingsView({ profile, setProfile, opportunities, onImported, onLogout
       <Section title="Account">
         <button style={{ ...secondaryBtn, color: THEME.bad, borderColor: THEME.bad }} onClick={onLogout}>Log out</button>
       </Section>
+
+      <Section title="Legal">
+        <details style={{ marginBottom: 10 }}>
+          <summary style={{ fontSize: 13, color: THEME.ink, cursor: "pointer", fontWeight: 600 }}>Privacy Policy</summary>
+          <div style={{ fontSize: 12, color: THEME.sub, marginTop: 8, lineHeight: 1.6 }}>
+            <p>We store your email, a securely hashed password (never the password itself), and whatever profile details you enter (name, nationality, target fields/countries, must-haves, deal-breakers, and your master CV text).</p>
+            <p>Your saved opportunities, pipeline stage, and document checklist status are private to your account and not visible to other users.</p>
+            <p>PDFs you import are processed to extract text and are not stored as files after processing.</p>
+            <p>We don't sell your data or share it with third parties beyond the external services this app queries on your behalf (e.g. GOV.UK, Adzuna) — those calls don't include your personal profile.</p>
+          </div>
+        </details>
+        <details>
+          <summary style={{ fontSize: 13, color: THEME.ink, cursor: "pointer", fontWeight: 600 }}>Terms of Use</summary>
+          <div style={{ fontSize: 12, color: THEME.sub, marginTop: 8, lineHeight: 1.6 }}>
+            <p>TravelSleek is an independent aggregator. It is not an immigration lawyer, visa agent, or university, and nothing here is legal or immigration advice.</p>
+            <p>Eligibility, scores, and "sponsor" information are estimates to help you prioritize — always confirm details on the official application page before relying on them or applying.</p>
+            <p>This is a personal project run on a small scale. There's no uptime guarantee, and features may change without notice.</p>
+          </div>
+        </details>
+      </Section>
     </div>
   );
 }
@@ -1044,6 +1116,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  const guest = !token;
 
   const persistProfile = async (p, tok) => {
     const useToken = tok || token;
@@ -1074,6 +1148,7 @@ export default function App() {
     setToken(newToken);
     const { data } = await supabase.rpc("get_profile_by_token", { p_token: newToken });
     setProfileState(mapDbProfile(data));
+    setView("inbox");
   };
 
   const handleLogout = async () => {
@@ -1081,6 +1156,7 @@ export default function App() {
     localStorage.removeItem("travelsleek_token");
     setToken(null);
     setProfileState(null);
+    setView("inbox");
   };
 
   useEffect(() => {
@@ -1100,18 +1176,26 @@ export default function App() {
     })();
   }, []);
 
+  // Logged-in users get their own stage/doc overlay via get_my_opportunities.
+  // Guests see the shared public feed, read-only, always defaulted to "saved".
   const loadOpportunities = async () => {
+    if (token) {
+      const { data, error } = await supabase.rpc("get_my_opportunities", { p_token: token });
+      if (!error && data) setOpportunities(data.map(rowToOpportunity));
+      return;
+    }
     const { data, error } = await supabase
       .from("opportunities")
       .select("*")
-      .neq("stage", "archived")
       .order("score", { ascending: false });
-    if (!error && data) setOpportunities(data.map(rowToOpportunity));
+    if (!error && data) {
+      setOpportunities(data.map((row) => ({ ...rowToOpportunity(row), stage: "saved" })));
+    }
   };
 
   useEffect(() => {
     loadOpportunities().finally(() => setLoading(false));
-  }, []);
+  }, [token]);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -1123,21 +1207,26 @@ export default function App() {
     }
   };
 
+  const requireAuth = () => { setView("auth"); };
+
   const handleBulk = async (ids, stage) => {
+    if (guest) return requireAuth();
     setOpportunities((list) => list.map((o) => ids.includes(o.id) ? { ...o, stage } : o));
-    await supabase.from("opportunities").update({ stage }).in("id", ids);
+    await Promise.all(ids.map((id) => supabase.rpc("set_opportunity_stage", { p_token: token, p_external_id: id, p_stage: stage })));
   };
   const handleStageChange = async (id, stage) => {
+    if (guest) return requireAuth();
     setOpportunities((list) => list.map((o) => o.id === id ? { ...o, stage } : o));
     setOpenId(null);
-    await supabase.from("opportunities").update({ stage }).eq("id", id);
+    await supabase.rpc("set_opportunity_stage", { p_token: token, p_external_id: id, p_stage: stage });
   };
   const handleDocStatus = async (id, docName, status) => {
+    if (guest) return requireAuth();
     const opp = opportunities.find((o) => o.id === id);
     if (!opp) return;
     const newDocs = opp.docs.map((d) => d.name === docName ? { ...d, status } : d);
     setOpportunities((list) => list.map((o) => o.id === id ? { ...o, docs: newDocs } : o));
-    await supabase.from("opportunities").update({ docs: newDocs }).eq("id", id);
+    await supabase.rpc("set_opportunity_docs", { p_token: token, p_external_id: id, p_docs: newDocs });
   };
 
   const openOpp = opportunities.find((o) => o.id === openId);
@@ -1150,9 +1239,9 @@ export default function App() {
     );
   }
 
-  if (!token) return <AuthScreen onAuthed={handleAuthed} />;
+  if (view === "auth") return <AuthScreen onAuthed={handleAuthed} onCancel={guest ? () => setView("inbox") : null} />;
 
-  if (!profile) {
+  if (token && !profile) {
     return (
       <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: THEME.bg, color: THEME.subHeading, fontFamily: "Inter, sans-serif" }}>
         Loading your profile…
@@ -1160,7 +1249,7 @@ export default function App() {
     );
   }
 
-  if (!profile.name) return <Onboarding onComplete={setProfile} />;
+  if (token && profile && !profile.name) return <Onboarding onComplete={setProfile} />;
 
   if (loading) {
     return (
@@ -1175,6 +1264,7 @@ export default function App() {
       <button
         onClick={() => setMobileNavOpen(true)}
         className="mobile-menu-btn"
+        aria-label="Open menu"
         style={{
           position: "fixed", top: 14, left: 14, zIndex: 30,
           border: `1px solid ${THEME.darkBorder}`, background: THEME.panel, color: THEME.ink,
@@ -1183,16 +1273,18 @@ export default function App() {
       >
         <Menu size={18} />
       </button>
-      <Sidebar view={view} setView={(v) => { setView(v); setOpenId(null); }} profile={profile} mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
-      {view === "inbox" && !openId && <Inbox opportunities={opportunities} onOpen={setOpenId} onBulk={handleBulk} onSync={handleSync} syncing={syncing} />}
+      <Sidebar view={view} setView={(v) => { setView(v); setOpenId(null); }} profile={profile} guest={guest} mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
+      {view === "inbox" && !openId && <Inbox opportunities={opportunities} onOpen={setOpenId} onBulk={handleBulk} onSync={handleSync} syncing={syncing} guest={guest} onRequireAuth={requireAuth} />}
       {view === "inbox" && openId && (
-        <Detail opp={openOpp} onBack={() => setOpenId(null)} onStageChange={handleStageChange} onDocStatus={handleDocStatus} />
+        <Detail opp={openOpp} onBack={() => setOpenId(null)} onStageChange={handleStageChange} onDocStatus={handleDocStatus} guest={guest} onRequireAuth={requireAuth} />
       )}
-      {view === "pipeline" && !openId && <Pipeline opportunities={opportunities} onOpen={setOpenId} />}
-      {view === "pipeline" && openId && (
-        <Detail opp={openOpp} onBack={() => setOpenId(null)} onStageChange={handleStageChange} onDocStatus={handleDocStatus} />
+      {view === "pipeline" && !guest && !openId && <Pipeline opportunities={opportunities} onOpen={setOpenId} />}
+      {view === "pipeline" && !guest && openId && (
+        <Detail opp={openOpp} onBack={() => setOpenId(null)} onStageChange={handleStageChange} onDocStatus={handleDocStatus} guest={guest} onRequireAuth={requireAuth} />
       )}
-      {view === "settings" && <SettingsView profile={profile} setProfile={setProfile} opportunities={opportunities} onImported={loadOpportunities} onLogout={handleLogout} />}
+      {view === "pipeline" && guest && <GuestPrompt message="Sign up to track opportunities through a pipeline — saved, preparing, submitted, decision." onSignUp={requireAuth} />}
+      {view === "settings" && !guest && <SettingsView profile={profile} setProfile={setProfile} opportunities={opportunities} onImported={loadOpportunities} onLogout={handleLogout} />}
+      {view === "settings" && guest && <GuestPrompt message="Sign up to save your profile, preferences, and import PDFs." onSignUp={requireAuth} />}
     </div>
   );
 }
