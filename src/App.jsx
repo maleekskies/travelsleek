@@ -443,6 +443,98 @@ function mapDbProfile(json) {
 }
 
 // ---------------------------------------------------------------------------
+// Eligibility engine — actually evaluates what we can check (degree level,
+// field, deal-breakers, must-haves) against the profile, instead of leaving
+// every criterion permanently unconfirmed. Anything we genuinely can't
+// verify (nationality lists, work-experience years, etc.) stays pass: null
+// rather than being guessed at.
+// ---------------------------------------------------------------------------
+
+const FIELD_WILDCARDS = ["any", "various", "varies by program", "any eligible occupation", "any recognized degree"];
+const COUNTRY_WILDCARDS = ["multiple", "multiple (eu)"];
+const NEGATION_WORDS = ["no ", "not ", "without ", "non-", "never ", "isn't ", "doesn't ", "won't ", "excludes ", "excluding ", "no need for "];
+
+// Finds a phrase in text and reports whether it's negated ("no bond", "not required")
+// right before it — a plain substring match can't tell "has a bond" from "no bond."
+function affirmativeMatch(haystack, phrase) {
+  const p = phrase.toLowerCase();
+  const idx = haystack.indexOf(p);
+  if (idx === -1) return { found: false, negated: false };
+  const preceding = haystack.slice(Math.max(0, idx - 25), idx);
+  const negated = NEGATION_WORDS.some((w) => preceding.endsWith(w));
+  return { found: true, negated };
+}
+
+function computeEligibility(opp, profile) {
+  if (!profile) return opp;
+
+  const computedCriteria = [];
+  let hardFail = false;
+  let softReview = false;
+
+  // Degree level — a hard requirement when the opportunity states one.
+  if (opp.degree && opp.degree !== "N/A") {
+    const wantsVisaOnly = profile.degreeLevel === "N/A — visa route only";
+    const degreeOk = !wantsVisaOnly && opp.degree.includes(profile.degreeLevel);
+    computedCriteria.push({ label: `Degree level matches your profile (${profile.degreeLevel})`, pass: degreeOk });
+    if (!degreeOk) hardFail = true;
+  }
+
+  // Field of study/occupation — soft signal, since categorization is fuzzy.
+  const fieldIsWildcard = opp.field && FIELD_WILDCARDS.includes(opp.field.toLowerCase());
+  if (profile.fields?.length > 0 && !fieldIsWildcard && opp.field) {
+    const fieldOk = profile.fields.some((f) =>
+      opp.field.toLowerCase().includes(f.toLowerCase()) || f.toLowerCase().includes(opp.field.toLowerCase())
+    );
+    computedCriteria.push({ label: `Field matches one you listed (${profile.fields.join(", ")})`, pass: fieldOk });
+    if (!fieldOk) softReview = true;
+  }
+
+  const haystack = `${opp.title} ${opp.reason} ${(opp.fit || []).join(" ")} ${(opp.gap || []).join(" ")} ${opp.field || ""} ${opp.degree || ""}`.toLowerCase();
+
+  // Deal-breakers — an affirmed (non-negated) match is a hard stop.
+  // A negated match ("no bond required") is actually reassuring, not a fail.
+  (profile.dealBreakers || []).forEach((db) => {
+    const { found, negated } = affirmativeMatch(haystack, db.toLowerCase());
+    if (found && !negated) {
+      computedCriteria.push({ label: `Deal-breaker mentioned: "${db}"`, pass: false });
+      hardFail = true;
+    } else if (found && negated) {
+      computedCriteria.push({ label: `Explicitly rules out "${db}"`, pass: true });
+    }
+  });
+
+  // Must-haves — an affirmed match satisfies it; a negated match clearly fails it;
+  // no mention at all is unconfirmed, not assumed missing.
+  (profile.mustHaves || []).forEach((mh) => {
+    const { found, negated } = affirmativeMatch(haystack, mh.toLowerCase());
+    const pass = !found ? null : negated ? false : true;
+    computedCriteria.push({ label: `Must-have mentioned: "${mh}"`, pass });
+    if (pass !== true) softReview = true;
+  });
+
+  const mergedCriteria = [...computedCriteria, ...(opp.eligCriteria || [])];
+  const anyUnconfirmed = mergedCriteria.some((c) => c.pass === null || c.pass === undefined);
+
+  let eligibility;
+  if (hardFail) eligibility = "not eligible";
+  else if (softReview || anyUnconfirmed) eligibility = "review";
+  else eligibility = "eligible";
+
+  // Country targeting is a preference, not an eligibility rule — surface it as a tag instead.
+  const extraFit = [...(opp.fit || [])];
+  const extraGap = [...(opp.gap || [])];
+  const countryIsWildcard = opp.country && COUNTRY_WILDCARDS.includes(opp.country.toLowerCase());
+  if (profile.countries?.length > 0 && opp.country && !countryIsWildcard) {
+    const inTargets = profile.countries.some((c) => c.toLowerCase() === opp.country.toLowerCase());
+    if (inTargets) extraFit.push("Matches a target country");
+    else extraGap.push("Outside your target countries");
+  }
+
+  return { ...opp, eligCriteria: mergedCriteria, eligibility, fit: extraFit, gap: extraGap };
+}
+
+// ---------------------------------------------------------------------------
 
 function Onboarding({ onComplete }) {
   const [step, setStep] = useState(0);
@@ -1229,7 +1321,11 @@ export default function App() {
     await supabase.rpc("set_opportunity_docs", { p_token: token, p_external_id: id, p_docs: newDocs });
   };
 
-  const openOpp = opportunities.find((o) => o.id === openId);
+  const displayOpportunities = useMemo(
+    () => guest ? opportunities : opportunities.map((o) => computeEligibility(o, profile)),
+    [opportunities, profile, guest]
+  );
+  const openOpp = displayOpportunities.find((o) => o.id === openId);
 
   if (!authChecked) {
     return (
@@ -1274,16 +1370,16 @@ export default function App() {
         <Menu size={18} />
       </button>
       <Sidebar view={view} setView={(v) => { setView(v); setOpenId(null); }} profile={profile} guest={guest} mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
-      {view === "inbox" && !openId && <Inbox opportunities={opportunities} onOpen={setOpenId} onBulk={handleBulk} onSync={handleSync} syncing={syncing} guest={guest} onRequireAuth={requireAuth} />}
+      {view === "inbox" && !openId && <Inbox opportunities={displayOpportunities} onOpen={setOpenId} onBulk={handleBulk} onSync={handleSync} syncing={syncing} guest={guest} onRequireAuth={requireAuth} />}
       {view === "inbox" && openId && (
         <Detail opp={openOpp} onBack={() => setOpenId(null)} onStageChange={handleStageChange} onDocStatus={handleDocStatus} guest={guest} onRequireAuth={requireAuth} />
       )}
-      {view === "pipeline" && !guest && !openId && <Pipeline opportunities={opportunities} onOpen={setOpenId} />}
+      {view === "pipeline" && !guest && !openId && <Pipeline opportunities={displayOpportunities} onOpen={setOpenId} />}
       {view === "pipeline" && !guest && openId && (
         <Detail opp={openOpp} onBack={() => setOpenId(null)} onStageChange={handleStageChange} onDocStatus={handleDocStatus} guest={guest} onRequireAuth={requireAuth} />
       )}
       {view === "pipeline" && guest && <GuestPrompt message="Sign up to track opportunities through a pipeline — saved, preparing, submitted, decision." onSignUp={requireAuth} />}
-      {view === "settings" && !guest && <SettingsView profile={profile} setProfile={setProfile} opportunities={opportunities} onImported={loadOpportunities} onLogout={handleLogout} />}
+      {view === "settings" && !guest && <SettingsView profile={profile} setProfile={setProfile} opportunities={displayOpportunities} onImported={loadOpportunities} onLogout={handleLogout} />}
       {view === "settings" && guest && <GuestPrompt message="Sign up to save your profile, preferences, and import PDFs." onSignUp={requireAuth} />}
     </div>
   );
