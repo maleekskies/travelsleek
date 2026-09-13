@@ -439,6 +439,9 @@ function mapDbProfile(json) {
     mustHaves: json?.must_haves || [],
     dealBreakers: json?.deal_breakers || [],
     cv: json?.cv || "",
+    age: json?.age ?? null,
+    workExperienceYears: json?.work_experience_years ?? null,
+    academicRecord: json?.academic_record || "",
   };
 }
 
@@ -513,7 +516,29 @@ function computeEligibility(opp, profile) {
     if (pass !== true) softReview = true;
   });
 
-  const mergedCriteria = [...computedCriteria, ...(opp.eligCriteria || [])];
+  // Resolve any stored criteria that carry a structured, checkable rule
+  // (age limits, minimum work experience) against the profile's actual numbers.
+  // Everything else (GPA/CGPA, degree class, nationality lists) stays exactly
+  // as stored — we don't compare grading scales, since a 3.6/4.0 vs. an 8.5/10
+  // isn't a safe automatic comparison.
+  const resolvedStoredCriteria = (opp.eligCriteria || []).map((c) => {
+    if (!c.check) return c;
+    if (c.check.type === "age_max") {
+      if (profile.age == null) return c;
+      const pass = profile.age <= c.check.value;
+      if (!pass) hardFail = true;
+      return { label: c.label, pass };
+    }
+    if (c.check.type === "experience_min_years") {
+      if (profile.workExperienceYears == null) return c;
+      const pass = profile.workExperienceYears >= c.check.value;
+      if (!pass) softReview = true;
+      return { label: c.label, pass };
+    }
+    return c;
+  });
+
+  const mergedCriteria = [...computedCriteria, ...resolvedStoredCriteria];
   const anyUnconfirmed = mergedCriteria.some((c) => c.pass === null || c.pass === undefined);
 
   let eligibility;
@@ -541,6 +566,7 @@ function Onboarding({ onComplete }) {
   const [profile, setProfile] = useState({
     name: "", fields: [], nationality: "", degreeLevel: "Master's",
     countries: [], mustHaves: [], dealBreakers: [], cv: "",
+    age: "", workExperienceYears: "", academicRecord: "",
   });
   const steps = ["Profile", "Targets", "Filters", "Master CV"];
 
@@ -569,7 +595,7 @@ function Onboarding({ onComplete }) {
         </h2>
         <p style={{ fontSize: 13, color: THEME.sub, margin: "0 0 24px", lineHeight: 1.5 }}>
           {step === 0 && "This grounds every eligibility check — nothing is invented beyond what you enter here."}
-          {step === 1 && "Countries, degree level, and field shape which scholarships and visa routes get scanned."}
+          {step === 1 && "Countries, degree level, and field shape which scholarships and visa routes get scanned. Age, experience, and academic record let us actually check age limits and experience minimums instead of just listing them."}
           {step === 2 && "Used to downrank or exclude opportunities automatically."}
           {step === 3 && "Paste it in. Kits and checklists are only ever built from facts found here."}
         </p>
@@ -579,6 +605,7 @@ function Onboarding({ onComplete }) {
             <Field label="Full name" value={profile.name} onChange={(v) => update("name", v)} />
             <TagInput label="Field of study / occupation" values={profile.fields} onChange={(v) => update("fields", v)} placeholder="Type one, press Enter — add as many as you're open to" />
             <Field label="Nationality" value={profile.nationality} onChange={(v) => update("nationality", v)} />
+            <Field label="Age" type="number" value={profile.age} onChange={(v) => update("age", v)} placeholder="e.g. 27" hint={'Used only to check age limits some scholarships state (e.g. "under 30").'} />
           </div>
         )}
         {step === 1 && (
@@ -590,6 +617,8 @@ function Onboarding({ onComplete }) {
               </select>
             </div>
             <TagInput label="Target countries" values={profile.countries} onChange={(v) => update("countries", v)} placeholder="Type one, press Enter — leave empty for anywhere" hint="Press Enter to add. Leave blank to see opportunities from any country." />
+            <Field label="Years of relevant work experience" type="number" value={profile.workExperienceYears} onChange={(v) => update("workExperienceYears", v)} placeholder="e.g. 2.5" hint={"Checked against minimums like \"at least 2 years' experience.\""} />
+            <Field label="Academic record (GPA, CGPA, or degree class)" value={profile.academicRecord} onChange={(v) => update("academicRecord", v)} placeholder="e.g. 3.6/4.0, 8.5/10, or First Class" hint="Shown for your own reference — grading scales vary too much to auto-check reliably." />
           </div>
         )}
         {step === 2 && (
@@ -610,7 +639,7 @@ function Onboarding({ onComplete }) {
           {step < 3 ? (
             <button onClick={() => setStep((s) => s + 1)} style={primaryBtn}>Continue <ChevronRight size={15} /></button>
           ) : (
-            <button onClick={() => onComplete(profile)} style={primaryBtn}>Enter Inbox <ChevronRight size={15} /></button>
+            <button onClick={() => onComplete({ ...profile, age: profile.age ? Number(profile.age) : null, workExperienceYears: profile.workExperienceYears ? Number(profile.workExperienceYears) : null })} style={primaryBtn}>Enter Inbox <ChevronRight size={15} /></button>
           )}
         </div>
       </div>
@@ -644,7 +673,7 @@ const lightSecondaryBtn = {
   display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer", padding: "9px 16px",
 };
 
-function Field({ label, value, onChange, placeholder, area, tall }) {
+function Field({ label, value, onChange, placeholder, area, tall, type, hint }) {
   return (
     <div>
       <label style={labelStyle}>{label}</label>
@@ -652,8 +681,9 @@ function Field({ label, value, onChange, placeholder, area, tall }) {
         <textarea value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
           rows={tall ? 8 : 3} style={{ ...inputStyle, resize: "vertical", fontFamily: "Inter, sans-serif" }} />
       ) : (
-        <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={inputStyle} />
+        <input type={type || "text"} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={inputStyle} />
       )}
+      {hint && <p style={{ fontSize: 11, color: THEME.faint, marginTop: 4, marginBottom: 0 }}>{hint}</p>}
     </div>
   );
 }
@@ -1095,6 +1125,9 @@ function SettingsView({ profile, setProfile, opportunities, onImported, onLogout
           <TagInput label="Target countries" values={profile.countries || []} onChange={(v) => setProfile((p) => ({ ...p, countries: v }))} placeholder="Type one, press Enter" hint="Press Enter to add. Leave blank to see opportunities from any country." />
           <TagInput label="Must-haves" values={profile.mustHaves || []} onChange={(v) => setProfile((p) => ({ ...p, mustHaves: v }))} placeholder="e.g. fully funded only" />
           <TagInput label="Deal-breakers" values={profile.dealBreakers || []} onChange={(v) => setProfile((p) => ({ ...p, dealBreakers: v }))} placeholder="e.g. requires spousal sponsorship" />
+          <Field label="Age" type="number" value={profile.age ?? ""} onChange={(v) => setProfile((p) => ({ ...p, age: v ? Number(v) : null }))} placeholder="e.g. 27" hint="Used to check age limits some scholarships state." />
+          <Field label="Years of relevant work experience" type="number" value={profile.workExperienceYears ?? ""} onChange={(v) => setProfile((p) => ({ ...p, workExperienceYears: v ? Number(v) : null }))} placeholder="e.g. 2.5" hint={"Checked against minimums like \"at least 2 years' experience.\""} />
+          <Field label="Academic record (GPA, CGPA, or degree class)" value={profile.academicRecord || ""} onChange={(v) => setProfile((p) => ({ ...p, academicRecord: v }))} placeholder="e.g. 3.6/4.0, 8.5/10, or First Class" hint="For your own reference — grading scales vary too much to auto-check." />
         </div>
       </Section>
 
@@ -1224,6 +1257,9 @@ export default function App() {
       p_must_haves: p.mustHaves || [],
       p_deal_breakers: p.dealBreakers || [],
       p_cv: p.cv || "",
+      p_age: p.age ?? null,
+      p_work_experience_years: p.workExperienceYears ?? null,
+      p_academic_record: p.academicRecord || "",
     });
   };
 
