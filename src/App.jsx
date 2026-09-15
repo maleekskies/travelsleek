@@ -3,7 +3,7 @@ import {
   Search, Check, X, ChevronRight, ChevronLeft, Archive, Bookmark,
   FileText, Clock, MapPin, GraduationCap, Briefcase, Settings as SettingsIcon,
   Inbox as InboxIcon, Layers, ArrowUpDown, Download, RefreshCw, Trash2, Send,
-  Upload, Loader2, Menu, ExternalLink
+  Upload, Loader2, Menu, ExternalLink, HelpCircle
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -35,6 +35,7 @@ function rowToOpportunity(row) {
     stage: row.stage,
     source: row.source,
     sourceUrl: row.source_url,
+    criteriaVerifiedAt: row.criteria_verified_at || null,
   };
 }
 
@@ -468,6 +469,20 @@ function affirmativeMatch(haystack, phrase) {
   return { found: true, negated };
 }
 
+// A few common country-name variants so "UK" / "South Korea" / "USA" etc. match
+// the canonical names stored in each scholarship's nationality rules.
+const NATIONALITY_ALIASES = {
+  "uk": "united kingdom", "britain": "united kingdom", "great britain": "united kingdom",
+  "england": "united kingdom", "scotland": "united kingdom", "wales": "united kingdom",
+  "usa": "united states", "us": "united states", "america": "united states",
+  "korea": "south korea", "republic of korea": "south korea",
+  "uae": "united arab emirates",
+};
+function normalizeNationality(n) {
+  const lower = (n || "").trim().toLowerCase();
+  return NATIONALITY_ALIASES[lower] || lower;
+}
+
 function computeEligibility(opp, profile) {
   if (!profile) return opp;
 
@@ -517,10 +532,10 @@ function computeEligibility(opp, profile) {
   });
 
   // Resolve any stored criteria that carry a structured, checkable rule
-  // (age limits, minimum work experience) against the profile's actual numbers.
-  // Everything else (GPA/CGPA, degree class, nationality lists) stays exactly
-  // as stored — we don't compare grading scales, since a 3.6/4.0 vs. an 8.5/10
-  // isn't a safe automatic comparison.
+  // (age limits, work experience, nationality) against the profile's actual data.
+  // GPA/CGPA, degree class, and anything else without a "check" stays exactly
+  // as stored — grading scales don't compare reliably enough to automate.
+  const myNationality = normalizeNationality(profile.nationality);
   const resolvedStoredCriteria = (opp.eligCriteria || []).map((c) => {
     if (!c.check) return c;
     if (c.check.type === "age_max") {
@@ -533,6 +548,24 @@ function computeEligibility(opp, profile) {
       if (profile.workExperienceYears == null) return c;
       const pass = profile.workExperienceYears >= c.check.value;
       if (!pass) softReview = true;
+      return { label: c.label, pass };
+    }
+    if (c.check.type === "nationality_exclude") {
+      if (!myNationality) return c;
+      const pass = myNationality !== normalizeNationality(c.check.value);
+      if (!pass) hardFail = true;
+      return { label: c.label, pass };
+    }
+    if (c.check.type === "nationality_include_list") {
+      if (!myNationality) return c;
+      const pass = c.check.value.some((v) => normalizeNationality(v) === myNationality);
+      if (!pass) hardFail = true;
+      return { label: c.label, pass };
+    }
+    if (c.check.type === "nationality_exclude_list") {
+      if (!myNationality) return c;
+      const pass = !c.check.value.some((v) => normalizeNationality(v) === myNationality);
+      if (!pass) hardFail = true;
       return { label: c.label, pass };
     }
     return c;
@@ -808,6 +841,13 @@ function Inbox({ opportunities, onOpen, onBulk, onSync, syncing, guest, onRequir
     return list;
   }, [opportunities, tab, query, sort]);
 
+  const urgentCount = useMemo(() => {
+    return opportunities.filter((o) => {
+      const d = daysUntil(o.deadline);
+      return d !== null && d <= 7 && o.stage !== "submitted" && o.stage !== "rejected";
+    }).length;
+  }, [opportunities]);
+
   const toggle = (id) => setSelected((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
 
   return (
@@ -816,6 +856,11 @@ function Inbox({ opportunities, onOpen, onBulk, onSync, syncing, guest, onRequir
         <div style={{ background: THEME.warnBg, border: `1px solid ${THEME.warn}55`, color: THEME.ink, fontSize: 12.5, padding: "10px 14px", marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
           <span>Browsing as a guest — your saves and progress won't be kept.</span>
           <button onClick={onRequireAuth} style={{ border: "none", background: "none", color: THEME.warn, fontWeight: 700, fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>Sign up</button>
+        </div>
+      )}
+      {urgentCount > 0 && (
+        <div style={{ background: THEME.badBg, border: `1px solid ${THEME.bad}55`, color: THEME.bad, fontSize: 12.5, fontWeight: 600, padding: "10px 14px", marginBottom: 16 }}>
+          ⏱ {urgentCount} {urgentCount === 1 ? "deadline is" : "deadlines are"} within a week — sort by Deadline below to see which first.
         </div>
       )}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
@@ -862,7 +907,7 @@ function Inbox({ opportunities, onOpen, onBulk, onSync, syncing, guest, onRequir
             borderBottom: `1px solid ${THEME.rowDivider}`, cursor: "pointer",
           }}>
             <input type="checkbox" checked={selected.includes(o.id)} onClick={(e) => e.stopPropagation()}
-              onChange={() => toggle(o.id)} className="inbox-row-check" style={{ width: 15, height: 15 }} />
+              onChange={() => toggle(o.id)} className="inbox-row-check" aria-label={`Select ${o.title}`} style={{ width: 15, height: 15 }} />
             <div className="inbox-row-score"><ScoreBadge score={o.score} /></div>
             <div className="inbox-row-content" style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 3, flexWrap: "wrap" }}>
@@ -940,12 +985,28 @@ function Detail({ opp, onBack, onStageChange, onDocStatus, guest, onRequireAuth 
       </Section>
 
       <Section title="Eligibility check">
-        {opp.eligCriteria.map((c) => (
-          <div key={c.label} style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 0", borderBottom: `1px solid ${THEME.rowDivider}`, fontSize: 13.5 }}>
-            {c.pass ? <Check size={15} color={THEME.good} /> : <X size={15} color={THEME.bad} />}
-            <span style={{ color: c.pass ? THEME.ink : THEME.bad }}>{c.label}</span>
-          </div>
-        ))}
+        {opp.criteriaVerifiedAt && (
+          <p style={{ fontSize: 11, color: THEME.faint, marginTop: 0, marginBottom: 10 }}>
+            Requirements last verified {opp.criteriaVerifiedAt} — scholarship rules can change year to year, so confirm on the official page before relying on this.
+          </p>
+        )}
+        {opp.eligCriteria.map((c) => {
+          const missingFieldHint = c.check && (c.pass === null || c.pass === undefined)
+            ? c.check.type === "age_max" ? "Add your age in Settings to check this."
+              : c.check.type === "experience_min_years" ? "Add your years of work experience in Settings to check this."
+              : c.check.type?.startsWith("nationality") ? "Add your nationality in Settings to check this."
+              : null
+            : null;
+          return (
+            <div key={c.label} style={{ padding: "7px 0", borderBottom: `1px solid ${THEME.rowDivider}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 13.5 }}>
+                {c.pass === true ? <Check size={15} color={THEME.good} /> : c.pass === false ? <X size={15} color={THEME.bad} /> : <HelpCircle size={15} color={THEME.faint} />}
+                <span style={{ color: c.pass === true ? THEME.ink : c.pass === false ? THEME.bad : THEME.sub }}>{c.label}</span>
+              </div>
+              {missingFieldHint && <div style={{ fontSize: 11, color: THEME.faint, marginLeft: 24, marginTop: 2 }}>{missingFieldHint}</div>}
+            </div>
+          );
+        })}
       </Section>
 
       <Section title="Documents">
