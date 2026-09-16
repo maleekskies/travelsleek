@@ -443,6 +443,7 @@ function mapDbProfile(json) {
     age: json?.age ?? null,
     workExperienceYears: json?.work_experience_years ?? null,
     academicRecord: json?.academic_record || "",
+    minScoreCutoff: json?.min_score_cutoff ?? 0,
   };
 }
 
@@ -828,18 +829,27 @@ function Sidebar({ view, setView, profile, guest, mobileOpen, onClose }) {
 
 // ---------------------------------------------------------------------------
 
-function Inbox({ opportunities, onOpen, onBulk, onSync, syncing, guest, onRequireAuth }) {
+function Inbox({ opportunities, onOpen, onBulk, onSync, syncing, guest, onRequireAuth, minScoreCutoff }) {
   const [tab, setTab] = useState("all");
   const [sort, setSort] = useState("score");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState([]);
 
+  const cutoff = minScoreCutoff || 0;
+  const hiddenByCutoffCount = useMemo(
+    () => opportunities.filter((o) => o.score < cutoff && (o.stage === "saved" || !o.stage)).length,
+    [opportunities, cutoff]
+  );
+
   const filtered = useMemo(() => {
     let list = opportunities.filter((o) => tab === "all" || o.type === tab);
+    // Only hide untracked ("saved"/default) opportunities below the cutoff —
+    // never hide something you've already moved into your pipeline.
+    list = list.filter((o) => o.score >= cutoff || (o.stage && o.stage !== "saved"));
     if (query) list = list.filter((o) => (o.title + o.org + o.country).toLowerCase().includes(query.toLowerCase()));
     list = [...list].sort((a, b) => sort === "score" ? b.score - a.score : (daysUntil(a.deadline) ?? 9999) - (daysUntil(b.deadline) ?? 9999));
     return list;
-  }, [opportunities, tab, query, sort]);
+  }, [opportunities, tab, query, sort, cutoff]);
 
   const urgentCount = useMemo(() => {
     return opportunities.filter((o) => {
@@ -871,6 +881,11 @@ function Inbox({ opportunities, onOpen, onBulk, onSync, syncing, guest, onRequir
       </div>
       <div style={{ fontSize: 12, color: THEME.subHeading, marginBottom: 4 }}>Live sources: GOV.UK, IRCC Open Data · Curated: {SOURCES.scholarship.join(" · ")}</div>
       <p style={{ fontSize: 13, color: THEME.subHeading, marginTop: 6, marginBottom: 20 }}>Untouched listings auto-archive after 30 days. Nothing here submits itself.</p>
+      {cutoff > 0 && hiddenByCutoffCount > 0 && (
+        <p style={{ fontSize: 12, color: THEME.subHeading, marginTop: -14, marginBottom: 18 }}>
+          {hiddenByCutoffCount} below your {cutoff}-score cutoff are hidden — adjust it in Settings.
+        </p>
+      )}
 
       <div style={{ display: "flex", gap: 18, borderBottom: `1px solid ${THEME.darkBorder}`, marginBottom: 18 }}>
         {[["all", "All"], ["scholarship", "Scholarships"], ["visa", "Work visas"]].map(([id, label]) => (
@@ -1102,15 +1117,24 @@ function Pipeline({ opportunities, onOpen }) {
 
 // ---------------------------------------------------------------------------
 
-function SettingsView({ profile, setProfile, opportunities, onImported, onLogout }) {
-  const [minScore, setMinScore] = useState(60);
-  const [digest, setDigest] = useState(true);
+function SettingsView({ profile, setProfile, opportunities, onImported, onLogout, onClearBoard }) {
   const [importType, setImportType] = useState("scholarship");
   const [importing, setImporting] = useState(false);
   const [importMsg, setImportMsg] = useState("");
   const [sponsorQuery, setSponsorQuery] = useState("");
   const [sponsorResults, setSponsorResults] = useState(null);
   const [sponsorSearching, setSponsorSearching] = useState(false);
+  const [clearing, setClearing] = useState(false);
+
+  const handleClearBoard = async () => {
+    if (!window.confirm("Reset your pipeline? This moves every saved/tracked opportunity back to \"saved\" and clears your document progress. The shared opportunity list itself isn't affected.")) return;
+    setClearing(true);
+    try {
+      await onClearBoard();
+    } finally {
+      setClearing(false);
+    }
+  };
 
   const checkSponsor = async () => {
     const q = sponsorQuery.trim();
@@ -1193,15 +1217,15 @@ function SettingsView({ profile, setProfile, opportunities, onImported, onLogout
       </Section>
 
       <Section title="Filters">
-        <label style={labelStyle}>Minimum score cutoff: {minScore}</label>
-        <input type="range" min={0} max={100} value={minScore} onChange={(e) => setMinScore(+e.target.value)} style={{ width: "100%" }} />
+        <label style={labelStyle}>Minimum score cutoff: {profile.minScoreCutoff ?? 0}</label>
+        <input type="range" min={0} max={100} value={profile.minScoreCutoff ?? 0} onChange={(e) => setProfile((p) => ({ ...p, minScoreCutoff: +e.target.value }))} style={{ width: "100%" }} />
+        <p style={{ fontSize: 11, color: THEME.faint, marginTop: 4, marginBottom: 0 }}>Hides untracked Inbox listings below this score. Anything already in your pipeline stays visible regardless.</p>
       </Section>
 
       <Section title="Digest">
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: THEME.ink }}>
-          <input type="checkbox" checked={digest} onChange={(e) => setDigest(e.target.checked)} />
-          Send a daily email when new matches clear my cutoff
-        </label>
+        <p style={{ fontSize: 12.5, color: THEME.faint, margin: 0 }}>
+          Not available yet — sending a daily email needs an email-sending service connected, which isn't set up. This isn't a working toggle right now, so it's not shown as one.
+        </p>
       </Section>
 
       <Section title="Import a PDF compilation">
@@ -1259,7 +1283,7 @@ function SettingsView({ profile, setProfile, opportunities, onImported, onLogout
       <Section title="Maintenance">
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button style={secondaryBtn} onClick={exportData}><Download size={13} /> Export data as JSON</button>
-          <button style={{ ...secondaryBtn, color: THEME.bad, borderColor: THEME.bad }}><Trash2 size={13} /> Clear board</button>
+          <button style={{ ...secondaryBtn, color: THEME.bad, borderColor: THEME.bad, opacity: clearing ? 0.6 : 1 }} onClick={handleClearBoard} disabled={clearing}><Trash2 size={13} /> {clearing ? "Clearing..." : "Clear board"}</button>
         </div>
       </Section>
 
@@ -1321,6 +1345,7 @@ export default function App() {
       p_age: p.age ?? null,
       p_work_experience_years: p.workExperienceYears ?? null,
       p_academic_record: p.academicRecord || "",
+      p_min_score_cutoff: p.minScoreCutoff ?? 0,
     });
   };
 
@@ -1346,6 +1371,12 @@ export default function App() {
     setToken(null);
     setProfileState(null);
     setView("inbox");
+  };
+
+  const handleClearBoard = async () => {
+    if (!token) return;
+    await supabase.rpc("clear_my_pipeline", { p_token: token });
+    await loadOpportunities();
   };
 
   useEffect(() => {
@@ -1467,7 +1498,7 @@ export default function App() {
         <Menu size={18} />
       </button>
       <Sidebar view={view} setView={(v) => { setView(v); setOpenId(null); }} profile={profile} guest={guest} mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
-      {view === "inbox" && !openId && <Inbox opportunities={displayOpportunities} onOpen={setOpenId} onBulk={handleBulk} onSync={handleSync} syncing={syncing} guest={guest} onRequireAuth={requireAuth} />}
+      {view === "inbox" && !openId && <Inbox opportunities={displayOpportunities} onOpen={setOpenId} onBulk={handleBulk} onSync={handleSync} syncing={syncing} guest={guest} onRequireAuth={requireAuth} minScoreCutoff={profile?.minScoreCutoff} />}
       {view === "inbox" && openId && (
         <Detail opp={openOpp} onBack={() => setOpenId(null)} onStageChange={handleStageChange} onDocStatus={handleDocStatus} guest={guest} onRequireAuth={requireAuth} />
       )}
@@ -1476,7 +1507,7 @@ export default function App() {
         <Detail opp={openOpp} onBack={() => setOpenId(null)} onStageChange={handleStageChange} onDocStatus={handleDocStatus} guest={guest} onRequireAuth={requireAuth} />
       )}
       {view === "pipeline" && guest && <GuestPrompt message="Sign up to track opportunities through a pipeline — saved, preparing, submitted, decision." onSignUp={requireAuth} />}
-      {view === "settings" && !guest && <SettingsView profile={profile} setProfile={setProfile} opportunities={displayOpportunities} onImported={loadOpportunities} onLogout={handleLogout} />}
+      {view === "settings" && !guest && <SettingsView profile={profile} setProfile={setProfile} opportunities={displayOpportunities} onImported={loadOpportunities} onLogout={handleLogout} onClearBoard={handleClearBoard} />}
       {view === "settings" && guest && <GuestPrompt message="Sign up to save your profile, preferences, and import PDFs." onSignUp={requireAuth} />}
     </div>
   );
