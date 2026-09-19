@@ -157,6 +157,33 @@ async function syncAdzuna() {
   return { newCount };
 }
 
+// Removes stale, perishable listings (job postings, one-off PDF imports) that
+// are more than 30 days old AND that no user has ever touched — checked via
+// user_opportunity_state, so anything anyone has saved/tracked is untouchable.
+// Evergreen entries (curated scholarship programmes, GOV.UK/IRCC policy
+// routes) are deliberately excluded — those don't go "stale" the way a job
+// posting does.
+const PERISHABLE_SOURCES = ["adzuna", "pdf-upload"];
+
+async function cleanupStaleListings() {
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+  const { data: touched } = await supabase.from("user_opportunity_state").select("external_id");
+  const touchedIds = new Set((touched || []).map((r) => r.external_id));
+
+  const { data: candidates } = await supabase
+    .from("opportunities")
+    .select("id, external_id")
+    .in("source", PERISHABLE_SOURCES)
+    .lt("created_at", cutoff);
+
+  const toDelete = (candidates || []).filter((c) => !touchedIds.has(c.external_id)).map((c) => c.id);
+  if (toDelete.length === 0) return { removed: 0 };
+
+  await supabase.from("opportunities").delete().in("id", toDelete);
+  return { removed: toDelete.length };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST" && req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -167,6 +194,7 @@ export default async function handler(req, res) {
   const govuk = await syncGovUk();
   const ircc = await syncIrcc();
   const adzuna = await syncAdzuna();
+  const cleanup = await cleanupStaleListings();
 
   const newCount = govuk.newCount + adzuna.newCount;
   const updatedCount = govuk.updatedCount + ircc.updatedCount;
@@ -176,13 +204,14 @@ export default async function handler(req, res) {
     new_count: newCount,
     updated_count: updatedCount,
     status: "ok",
-    message: `GOV.UK + IRCC sync via ${triggeredBy}`,
+    message: `GOV.UK + IRCC sync via ${triggeredBy} — removed ${cleanup.removed} stale untouched listings`,
   });
 
   return res.status(200).json({
     ok: true,
     triggeredBy,
     newCount,
+    removedStale: cleanup.removed,
     updatedCount,
     ranAt: new Date().toISOString(),
   });

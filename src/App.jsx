@@ -36,6 +36,7 @@ function rowToOpportunity(row) {
     source: row.source,
     sourceUrl: row.source_url,
     criteriaVerifiedAt: row.criteria_verified_at || null,
+    notes: row.notes || "",
   };
 }
 
@@ -65,187 +66,24 @@ const SOURCES = {
   visa: ["UK Skilled Worker", "Canada Express Entry", "Australia Skilled 189/190", "Germany Job Seeker", "Ireland Critical Skills"],
 };
 
-const seedOpportunities = [
-  {
-    id: "o1", type: "scholarship", org: "DAAD", title: "EPOS Master's Scholarship — Development Studies",
-    country: "Germany", degree: "Master's", field: "Development Economics",
-    deadline: "2026-10-15", score: 88,
-    reason: "Strong field match and you meet every stated eligibility line.",
-    fit: ["Field match", "Under age cap", "IELTS meets minimum"],
-    gap: ["No prior study-abroad experience listed"],
-    eligibility: "eligible",
-    eligCriteria: [
-      { label: "Bachelor's degree completed", pass: true },
-      { label: "Nationality: developing country per DAAD list", pass: true },
-      { label: "2 years relevant work experience", pass: true },
-      { label: "English proficiency (IELTS 6.5+)", pass: true },
-    ],
-    docs: [
-      { name: "Statement of Purpose", status: "drafting" },
-      { name: "Recommendation Letter 1", status: "not started" },
-      { name: "Recommendation Letter 2", status: "not started" },
-      { name: "Transcripts (certified)", status: "ready" },
-      { name: "CV (Europass format)", status: "ready" },
-    ],
-    nextAction: "Request recommendation letters", nextDate: "2026-09-20",
-    stage: "saved",
-  },
-  {
-    id: "o2", type: "visa", org: "UK Skilled Worker", title: "Skilled Worker visa — Data & AI occupation code",
-    country: "United Kingdom", degree: "N/A", field: "Software / Data",
-    deadline: "2026-12-01", score: 74,
-    reason: "Route is open to your occupation, but you don't yet have a sponsor.",
-    fit: ["Occupation on eligible list", "Salary threshold met if offer lands"],
-    gap: ["No certificate of sponsorship yet"],
-    eligibility: "review",
-    eligCriteria: [
-      { label: "Job offer from licensed sponsor", pass: false },
-      { label: "Occupation on eligible list", pass: true },
-      { label: "Salary at or above going rate", pass: true },
-      { label: "English requirement", pass: true },
-    ],
-    docs: [
-      { name: "Certificate of Sponsorship", status: "not started" },
-      { name: "Financial evidence", status: "ready" },
-      { name: "TB test certificate", status: "not started" },
-      { name: "Passport", status: "ready" },
-    ],
-    nextAction: "Shortlist licensed sponsors in target occupation", nextDate: "2026-09-25",
-    stage: "saved",
-  },
-  {
-    id: "o3", type: "scholarship", org: "Chevening", title: "Chevening Scholarship — Public Policy",
-    country: "United Kingdom", degree: "Master's", field: "Public Policy",
-    deadline: "2026-11-05", score: 65,
-    reason: "Good field fit, but your work experience is a year short of the usual bar.",
-    fit: ["Field match", "Leadership examples in profile"],
-    gap: ["2 years work experience vs. your 1"],
-    eligibility: "review",
-    eligCriteria: [
-      { label: "Min. 2 years work experience", pass: false },
-      { label: "Bachelor's degree completed", pass: true },
-      { label: "Return to home country for 2 years post-study", pass: true },
-      { label: "No dual UK/home citizenship", pass: true },
-    ],
-    docs: [
-      { name: "Personal statement (4 essays)", status: "drafting" },
-      { name: "Reference 1", status: "not started" },
-      { name: "Reference 2", status: "not started" },
-    ],
-    nextAction: "Draft leadership essay", nextDate: "2026-09-18",
-    stage: "preparing",
-  },
-  {
-    id: "o4", type: "visa", org: "Canada Express Entry", title: "Federal Skilled Worker Program",
-    country: "Canada", degree: "N/A", field: "Software / Data",
-    deadline: "Rolling — draw-based", score: 81,
-    reason: "CRS estimate lands above recent draw cutoffs for your profile.",
-    fit: ["Age band", "Education points maxed", "French as second language possible"],
-    gap: ["ECA not yet completed"],
-    eligibility: "eligible",
-    eligCriteria: [
-      { label: "CRS score above recent draws", pass: true },
-      { label: "Educational Credential Assessment", pass: false },
-      { label: "Language test (IELTS/CELPIP)", pass: true },
-      { label: "Proof of funds", pass: true },
-    ],
-    docs: [
-      { name: "ECA report", status: "not started" },
-      { name: "Language test results", status: "ready" },
-      { name: "Proof of funds statement", status: "ready" },
-    ],
-    nextAction: "Book ECA with WES", nextDate: "2026-09-22",
-    stage: "preparing",
-  },
-  {
-    id: "o5", type: "scholarship", org: "Erasmus Mundus", title: "Joint Master's — Data Science for Sustainability",
-    country: "Multiple (EU)", degree: "Master's", field: "Data Science",
-    deadline: "2027-01-10", score: 91,
-    reason: "Near-perfect field and profile match, deadline is comfortably far out.",
-    fit: ["Field match", "STEM background", "Mobility across 3 countries fine with you"],
-    gap: [],
-    eligibility: "eligible",
-    eligCriteria: [
-      { label: "Bachelor's in related field", pass: true },
-      { label: "English proficiency", pass: true },
-      { label: "No more than one prior EM scholarship", pass: true },
-    ],
-    docs: [
-      { name: "Motivation letter", status: "ready" },
-      { name: "Recommendation Letter", status: "ready" },
-      { name: "Transcripts", status: "ready" },
-    ],
-    nextAction: "Submit application", nextDate: "2026-09-10",
-    stage: "submitted",
-  },
-  {
-    id: "o6", type: "visa", org: "Australia Skilled 189/190", title: "Skilled Independent visa (subclass 189)",
-    country: "Australia", degree: "N/A", field: "Software / Data",
-    deadline: "Rolling — invitation-based", score: 52,
-    reason: "Points estimate is below recent invitation rounds for your occupation.",
-    fit: ["Occupation on MLTSSL"],
-    gap: ["Points estimate ~15 below last invitation round", "No state nomination yet"],
-    eligibility: "not eligible",
-    eligCriteria: [
-      { label: "Points test ≥ 65", pass: true },
-      { label: "Competitive score vs. recent rounds", pass: false },
-      { label: "Skills assessment completed", pass: false },
-    ],
-    docs: [
-      { name: "Skills assessment", status: "not started" },
-    ],
-    nextAction: "Consider state nomination (190) to add points", nextDate: "2026-10-01",
-    stage: "saved",
-  },
-  {
-    id: "o7", type: "scholarship", org: "Fulbright", title: "Fulbright Foreign Student Program",
-    country: "United States", degree: "Master's / PhD", field: "Public Health",
-    deadline: "2026-09-30", score: 79,
-    reason: "Strong fit, but the deadline is very close for the document list still open.",
-    fit: ["Field match", "Community leadership emphasis matches profile"],
-    gap: ["No standardized test score on file yet"],
-    eligibility: "review",
-    eligCriteria: [
-      { label: "Bachelor's degree completed", pass: true },
-      { label: "2 years relevant experience or plans", pass: true },
-      { label: "TOEFL/IELTS on file", pass: false },
-    ],
-    docs: [
-      { name: "Statement of Grant Purpose", status: "drafting" },
-      { name: "Personal Statement", status: "not started" },
-      { name: "TOEFL score report", status: "not started" },
-    ],
-    nextAction: "Book TOEFL test slot", nextDate: "2026-09-12",
-    stage: "saved",
-  },
-  {
-    id: "o8", type: "visa", org: "Germany Job Seeker", title: "Job Seeker Visa — IT occupations",
-    country: "Germany", degree: "N/A", field: "Software / Data",
-    deadline: "Rolling", score: 84,
-    reason: "You clear every stated requirement for the job-seeker route.",
-    fit: ["Recognized degree", "Sufficient funds", "German A2 not required for IT shortage list"],
-    gap: [],
-    eligibility: "eligible",
-    eligCriteria: [
-      { label: "Recognized university degree", pass: true },
-      { label: "Proof of funds for 6 months", pass: true },
-      { label: "Health insurance for stay", pass: true },
-    ],
-    docs: [
-      { name: "Degree recognition (anabin check)", status: "ready" },
-      { name: "Blocked account / proof of funds", status: "ready" },
-      { name: "Health insurance", status: "not started" },
-    ],
-    nextAction: "Arrange travel health insurance", nextDate: "2026-09-14",
-    stage: "interview",
-  },
-];
 
 const daysUntil = (dateStr) => {
   if (!dateStr || dateStr.toLowerCase().includes("rolling")) return null;
   const diff = Math.ceil((new Date(dateStr) - new Date("2026-09-06")) / 86400000);
   return diff;
 };
+
+function formatRelativeTime(isoString) {
+  if (!isoString) return null;
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
 
 const eligStamp = {
   eligible: { label: "ELIGIBLE", color: THEME.good, bg: THEME.goodBg, hint: "You meet every stated eligibility line we could check automatically." },
@@ -834,6 +672,12 @@ function Inbox({ opportunities, onOpen, onBulk, onSync, syncing, guest, onRequir
   const [sort, setSort] = useState("score");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState([]);
+  const [lastSynced, setLastSynced] = useState(null);
+
+  useEffect(() => {
+    supabase.from("sync_log").select("ran_at").order("ran_at", { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => { if (data?.ran_at) setLastSynced(data.ran_at); });
+  }, [syncing]);
 
   const cutoff = minScoreCutoff || 0;
   const hiddenByCutoffCount = useMemo(
@@ -873,14 +717,17 @@ function Inbox({ opportunities, onOpen, onBulk, onSync, syncing, guest, onRequir
           ⏱ {urgentCount} {urgentCount === 1 ? "deadline is" : "deadlines are"} within a week — sort by Deadline below to see which first.
         </div>
       )}
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4, flexWrap: "wrap", gap: 8 }}>
         <h1 style={{ fontFamily: "'Source Serif 4', serif", fontSize: 26, margin: 0, color: THEME.heading }}>Inbox</h1>
-        <button onClick={onSync} disabled={syncing} style={{ ...lightGhostBtn, opacity: syncing ? 0.6 : 1 }}>
-          {syncing ? <Loader2 size={13} /> : <RefreshCw size={13} />} {syncing ? "Syncing..." : "Sync now"}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {lastSynced && <span style={{ fontSize: 11, color: THEME.subHeading }}>Last synced {formatRelativeTime(lastSynced)}</span>}
+          <button onClick={onSync} disabled={syncing} style={{ ...lightGhostBtn, opacity: syncing ? 0.6 : 1 }}>
+            {syncing ? <Loader2 size={13} /> : <RefreshCw size={13} />} {syncing ? "Syncing..." : "Sync now"}
+          </button>
+        </div>
       </div>
       <div style={{ fontSize: 12, color: THEME.subHeading, marginBottom: 4 }}>Live sources: GOV.UK, IRCC Open Data · Curated: {SOURCES.scholarship.join(" · ")}</div>
-      <p style={{ fontSize: 13, color: THEME.subHeading, marginTop: 6, marginBottom: 20 }}>Untouched listings auto-archive after 30 days. Nothing here submits itself.</p>
+      <p style={{ fontSize: 13, color: THEME.subHeading, marginTop: 6, marginBottom: 20 }}>Untouched job listings and PDF imports are removed after 30 days — scholarship and visa-route entries don't expire. Nothing here submits itself.</p>
       {cutoff > 0 && hiddenByCutoffCount > 0 && (
         <p style={{ fontSize: 12, color: THEME.subHeading, marginTop: -14, marginBottom: 18 }}>
           {hiddenByCutoffCount} below your {cutoff}-score cutoff are hidden — adjust it in Settings.
@@ -960,8 +807,21 @@ function Tag({ text, good }) {
 
 // ---------------------------------------------------------------------------
 
-function Detail({ opp, onBack, onStageChange, onDocStatus, guest, onRequireAuth }) {
+function Detail({ opp, onBack, onStageChange, onDocStatus, onNotesChange, onNextActionChange, guest, onRequireAuth }) {
+  const [nextAction, setNextAction] = useState(opp?.nextAction || "");
+  const [nextDate, setNextDate] = useState(opp?.nextDate || "");
+  const [notes, setNotes] = useState(opp?.notes || "");
+
   if (!opp) return null;
+
+  const saveNextAction = () => onNextActionChange?.(opp.id, nextAction, nextDate);
+  const saveNotes = () => onNotesChange?.(opp.id, notes);
+
+  const handleReject = () => {
+    const reason = window.prompt("Optional — why are you rejecting this? (Leave blank to skip)");
+    onStageChange(opp.id, "rejected", reason?.trim() || undefined);
+  };
+
   return (
     <div className="detail-page" style={{ padding: "28px 36px", flex: 1, overflow: "auto", maxWidth: 760 }}>
       <button onClick={onBack} style={lightGhostBtn}><ChevronLeft size={15} /> Back to inbox</button>
@@ -1048,9 +908,30 @@ function Detail({ opp, onBack, onStageChange, onDocStatus, guest, onRequireAuth 
       </Section>
 
       <Section title="Next action">
-        <div style={{ fontSize: 13.5, color: THEME.ink }}>{opp.nextAction}</div>
-        <div style={{ fontSize: 12, color: THEME.sub, marginTop: 3 }}>by {opp.nextDate}</div>
+        {guest ? (
+          <>
+            <div style={{ fontSize: 13.5, color: THEME.ink }}>{opp.nextAction}</div>
+            <div style={{ fontSize: 12, color: THEME.sub, marginTop: 3 }}>by {opp.nextDate}</div>
+          </>
+        ) : (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <input value={nextAction} onChange={(e) => setNextAction(e.target.value)} onBlur={saveNextAction}
+                placeholder="e.g. Draft leadership essay" style={{ ...inputStyle, marginBottom: 0 }} />
+            </div>
+            <input value={nextDate} onChange={(e) => setNextDate(e.target.value)} onBlur={saveNextAction}
+              placeholder="by (any date format)" style={{ ...inputStyle, width: 160, marginBottom: 0 }} />
+          </div>
+        )}
       </Section>
+
+      {!guest && (
+        <Section title="Notes">
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} onBlur={saveNotes}
+            placeholder="Your own notes on this one — why you're interested, what a recommender said, anything."
+            rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "Inter, sans-serif" }} />
+        </Section>
+      )}
 
       {guest ? (
         <div style={{ background: THEME.panel, border: `1px solid ${THEME.panelBorder}`, padding: "16px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -1061,7 +942,7 @@ function Detail({ opp, onBack, onStageChange, onDocStatus, guest, onRequireAuth 
         <div style={{ background: THEME.panel, border: `1px solid ${THEME.panelBorder}`, padding: "16px 18px", display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button style={primaryBtn} onClick={() => onStageChange(opp.id, "preparing")}><Bookmark size={14} /> Save to pipeline</button>
           <button style={secondaryBtn} onClick={() => onStageChange(opp.id, "submitted")}><Send size={14} /> Mark submitted</button>
-          <button style={{ ...ghostBtn, color: THEME.bad }} onClick={() => onStageChange(opp.id, "rejected")}><X size={14} /> Reject with reason</button>
+          <button style={{ ...ghostBtn, color: THEME.bad }} onClick={handleReject}><X size={14} /> Reject with reason</button>
         </div>
       )}
     </div>
@@ -1434,11 +1315,17 @@ export default function App() {
     setOpportunities((list) => list.map((o) => ids.includes(o.id) ? { ...o, stage } : o));
     await Promise.all(ids.map((id) => supabase.rpc("set_opportunity_stage", { p_token: token, p_external_id: id, p_stage: stage })));
   };
-  const handleStageChange = async (id, stage) => {
+  const handleStageChange = async (id, stage, reason) => {
     if (guest) return requireAuth();
     setOpportunities((list) => list.map((o) => o.id === id ? { ...o, stage } : o));
     setOpenId(null);
     await supabase.rpc("set_opportunity_stage", { p_token: token, p_external_id: id, p_stage: stage });
+    if (reason) {
+      const opp = opportunities.find((o) => o.id === id);
+      const newNotes = opp?.notes ? `${opp.notes}\n\nRejected: ${reason}` : `Rejected: ${reason}`;
+      setOpportunities((list) => list.map((o) => o.id === id ? { ...o, notes: newNotes } : o));
+      await supabase.rpc("set_opportunity_notes", { p_token: token, p_external_id: id, p_notes: newNotes });
+    }
   };
   const handleDocStatus = async (id, docName, status) => {
     if (guest) return requireAuth();
@@ -1447,6 +1334,16 @@ export default function App() {
     const newDocs = opp.docs.map((d) => d.name === docName ? { ...d, status } : d);
     setOpportunities((list) => list.map((o) => o.id === id ? { ...o, docs: newDocs } : o));
     await supabase.rpc("set_opportunity_docs", { p_token: token, p_external_id: id, p_docs: newDocs });
+  };
+  const handleNotesChange = async (id, notes) => {
+    if (guest) return requireAuth();
+    setOpportunities((list) => list.map((o) => o.id === id ? { ...o, notes } : o));
+    await supabase.rpc("set_opportunity_notes", { p_token: token, p_external_id: id, p_notes: notes });
+  };
+  const handleNextActionChange = async (id, nextAction, nextDate) => {
+    if (guest) return requireAuth();
+    setOpportunities((list) => list.map((o) => o.id === id ? { ...o, nextAction, nextDate } : o));
+    await supabase.rpc("set_opportunity_next_action", { p_token: token, p_external_id: id, p_next_action: nextAction, p_next_date: nextDate });
   };
 
   const displayOpportunities = useMemo(
@@ -1500,11 +1397,11 @@ export default function App() {
       <Sidebar view={view} setView={(v) => { setView(v); setOpenId(null); }} profile={profile} guest={guest} mobileOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
       {view === "inbox" && !openId && <Inbox opportunities={displayOpportunities} onOpen={setOpenId} onBulk={handleBulk} onSync={handleSync} syncing={syncing} guest={guest} onRequireAuth={requireAuth} minScoreCutoff={profile?.minScoreCutoff} />}
       {view === "inbox" && openId && (
-        <Detail opp={openOpp} onBack={() => setOpenId(null)} onStageChange={handleStageChange} onDocStatus={handleDocStatus} guest={guest} onRequireAuth={requireAuth} />
+        <Detail key={openOpp?.id} opp={openOpp} onBack={() => setOpenId(null)} onStageChange={handleStageChange} onDocStatus={handleDocStatus} onNotesChange={handleNotesChange} onNextActionChange={handleNextActionChange} guest={guest} onRequireAuth={requireAuth} />
       )}
       {view === "pipeline" && !guest && !openId && <Pipeline opportunities={displayOpportunities} onOpen={setOpenId} />}
       {view === "pipeline" && !guest && openId && (
-        <Detail opp={openOpp} onBack={() => setOpenId(null)} onStageChange={handleStageChange} onDocStatus={handleDocStatus} guest={guest} onRequireAuth={requireAuth} />
+        <Detail key={openOpp?.id} opp={openOpp} onBack={() => setOpenId(null)} onStageChange={handleStageChange} onDocStatus={handleDocStatus} onNotesChange={handleNotesChange} onNextActionChange={handleNextActionChange} guest={guest} onRequireAuth={requireAuth} />
       )}
       {view === "pipeline" && guest && <GuestPrompt message="Sign up to track opportunities through a pipeline — saved, preparing, submitted, decision." onSignUp={requireAuth} />}
       {view === "settings" && !guest && <SettingsView profile={profile} setProfile={setProfile} opportunities={displayOpportunities} onImported={loadOpportunities} onLogout={handleLogout} onClearBoard={handleClearBoard} />}
