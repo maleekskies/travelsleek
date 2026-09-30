@@ -1207,13 +1207,14 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
   const guest = !token;
 
-  const persistProfile = async (p, tok) => {
+  const persistProfile = async (p, tok, prevProfile) => {
     const useToken = tok || token;
     if (!useToken) return;
-    await supabase.rpc("save_profile", {
+    const { error } = await supabase.rpc("save_profile", {
       p_token: useToken,
       p_name: p.name || "",
       p_nationality: p.nationality || "",
@@ -1228,12 +1229,16 @@ export default function App() {
       p_academic_record: p.academicRecord || "",
       p_min_score_cutoff: p.minScoreCutoff ?? 0,
     });
+    if (error) {
+      setSaveError(`Couldn't save your profile change: ${error.message}. Please try again.`);
+      if (prevProfile) setProfileState(prevProfile);
+    }
   };
 
   const setProfile = (updater) => {
     setProfileState((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      persistProfile(next);
+      persistProfile(next, null, prev);
       return next;
     });
   };
@@ -1256,7 +1261,11 @@ export default function App() {
 
   const handleClearBoard = async () => {
     if (!token) return;
-    await supabase.rpc("clear_my_pipeline", { p_token: token });
+    const { error } = await supabase.rpc("clear_my_pipeline", { p_token: token });
+    if (error) {
+      setSaveError(`Couldn't clear your board: ${error.message}. Please try again.`);
+      return;
+    }
     await loadOpportunities();
   };
 
@@ -1282,14 +1291,16 @@ export default function App() {
   const loadOpportunities = async () => {
     if (token) {
       const { data, error } = await supabase.rpc("get_my_opportunities", { p_token: token });
-      if (!error && data) setOpportunities(data.map(rowToOpportunity));
+      if (error) { setSaveError(`Couldn't load your opportunities: ${error.message}.`); return; }
+      if (data) setOpportunities(data.map(rowToOpportunity));
       return;
     }
     const { data, error } = await supabase
       .from("opportunities")
       .select("*")
       .order("score", { ascending: false });
-    if (!error && data) {
+    if (error) { setSaveError(`Couldn't load opportunities: ${error.message}.`); return; }
+    if (data) {
       setOpportunities(data.map((row) => ({ ...rowToOpportunity(row), stage: "saved" })));
     }
   };
@@ -1312,38 +1323,68 @@ export default function App() {
 
   const handleBulk = async (ids, stage) => {
     if (guest) return requireAuth();
+    const prev = opportunities;
     setOpportunities((list) => list.map((o) => ids.includes(o.id) ? { ...o, stage } : o));
-    await Promise.all(ids.map((id) => supabase.rpc("set_opportunity_stage", { p_token: token, p_external_id: id, p_stage: stage })));
+    const results = await Promise.all(ids.map((id) => supabase.rpc("set_opportunity_stage", { p_token: token, p_external_id: id, p_stage: stage })));
+    const failed = results.some((r) => r.error);
+    if (failed) {
+      setSaveError("Couldn't save one or more of those changes. Please try again.");
+      setOpportunities(prev);
+    }
   };
   const handleStageChange = async (id, stage, reason) => {
     if (guest) return requireAuth();
+    const prev = opportunities;
     setOpportunities((list) => list.map((o) => o.id === id ? { ...o, stage } : o));
     setOpenId(null);
-    await supabase.rpc("set_opportunity_stage", { p_token: token, p_external_id: id, p_stage: stage });
+    const { error } = await supabase.rpc("set_opportunity_stage", { p_token: token, p_external_id: id, p_stage: stage });
+    if (error) {
+      setSaveError(`Couldn't save that change: ${error.message}. Please try again.`);
+      setOpportunities(prev);
+      return;
+    }
     if (reason) {
       const opp = opportunities.find((o) => o.id === id);
       const newNotes = opp?.notes ? `${opp.notes}\n\nRejected: ${reason}` : `Rejected: ${reason}`;
       setOpportunities((list) => list.map((o) => o.id === id ? { ...o, notes: newNotes } : o));
-      await supabase.rpc("set_opportunity_notes", { p_token: token, p_external_id: id, p_notes: newNotes });
+      const { error: notesError } = await supabase.rpc("set_opportunity_notes", { p_token: token, p_external_id: id, p_notes: newNotes });
+      if (notesError) setSaveError(`Marked as rejected, but couldn't save the reason: ${notesError.message}`);
     }
   };
   const handleDocStatus = async (id, docName, status) => {
     if (guest) return requireAuth();
     const opp = opportunities.find((o) => o.id === id);
     if (!opp) return;
+    const prevDocs = opp.docs;
     const newDocs = opp.docs.map((d) => d.name === docName ? { ...d, status } : d);
     setOpportunities((list) => list.map((o) => o.id === id ? { ...o, docs: newDocs } : o));
-    await supabase.rpc("set_opportunity_docs", { p_token: token, p_external_id: id, p_docs: newDocs });
+    const { error } = await supabase.rpc("set_opportunity_docs", { p_token: token, p_external_id: id, p_docs: newDocs });
+    if (error) {
+      setSaveError(`Couldn't save that document status: ${error.message}. Please try again.`);
+      setOpportunities((list) => list.map((o) => o.id === id ? { ...o, docs: prevDocs } : o));
+    }
   };
   const handleNotesChange = async (id, notes) => {
     if (guest) return requireAuth();
+    const opp = opportunities.find((o) => o.id === id);
+    const prevNotes = opp?.notes;
     setOpportunities((list) => list.map((o) => o.id === id ? { ...o, notes } : o));
-    await supabase.rpc("set_opportunity_notes", { p_token: token, p_external_id: id, p_notes: notes });
+    const { error } = await supabase.rpc("set_opportunity_notes", { p_token: token, p_external_id: id, p_notes: notes });
+    if (error) {
+      setSaveError(`Couldn't save your notes: ${error.message}. Please try again.`);
+      setOpportunities((list) => list.map((o) => o.id === id ? { ...o, notes: prevNotes } : o));
+    }
   };
   const handleNextActionChange = async (id, nextAction, nextDate) => {
     if (guest) return requireAuth();
+    const opp = opportunities.find((o) => o.id === id);
+    const prevAction = opp?.nextAction, prevDate = opp?.nextDate;
     setOpportunities((list) => list.map((o) => o.id === id ? { ...o, nextAction, nextDate } : o));
-    await supabase.rpc("set_opportunity_next_action", { p_token: token, p_external_id: id, p_next_action: nextAction, p_next_date: nextDate });
+    const { error } = await supabase.rpc("set_opportunity_next_action", { p_token: token, p_external_id: id, p_next_action: nextAction, p_next_date: nextDate });
+    if (error) {
+      setSaveError(`Couldn't save that next action: ${error.message}. Please try again.`);
+      setOpportunities((list) => list.map((o) => o.id === id ? { ...o, nextAction: prevAction, nextDate: prevDate } : o));
+    }
   };
 
   const displayOpportunities = useMemo(
@@ -1382,6 +1423,19 @@ export default function App() {
 
   return (
     <div style={{ display: "flex", height: "100vh", background: THEME.bg, fontFamily: "Inter, sans-serif", color: THEME.ink, position: "relative" }}>
+      {saveError && (
+        <div role="alert" style={{
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
+          background: THEME.badBg, borderBottom: `2px solid ${THEME.bad}`, color: THEME.bad,
+          fontSize: 13, fontWeight: 600, padding: "10px 16px",
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+        }}>
+          <span>{saveError}</span>
+          <button onClick={() => setSaveError(null)} aria-label="Dismiss error" style={{ border: "none", background: "none", color: THEME.bad, cursor: "pointer", padding: 2 }}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
       <button
         onClick={() => setMobileNavOpen(true)}
         className="mobile-menu-btn"
