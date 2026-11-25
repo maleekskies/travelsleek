@@ -1,8 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
 import crypto from "node:crypto";
 
-const SUPABASE_URL = "https://tsgbrupkcejntodznspr.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRzZ2JydXBrY2VqbnRvZHpuc3ByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3NTc1OTQsImV4cCI6MjEwNDMzMzU5NH0.6QyuO7-4cCy97Yly8sPUTE7omOyBtfu0oFUhoGxJgK0";
+const SUPABASE_URL = "https://wgxuwmbbkgrzjwcacvsl.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndneHV3bWJia2dyemp3Y2FjdnNsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTU2Mjg1NzcsImV4cCI6MjExMTIwNDU3N30.xgd0yoRSlLiq9PMVWVgX0XB9msgj68yFS3GzQk8hgrc";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
